@@ -4,13 +4,17 @@ This addon displays a pop-up frame showing items and rolls when a single uncommo
 
 ### Features:
 
-- **Start Rolling**: To start the rolling process, send the item as a **Raid Warning**. This will trigger the frame to appear and display rolls. The frame will appear only if the sender is the ML
+- **Start Rolling**: Send the item as a **Raid Warning** (`/rw`), or in **Raid** / **Party** chat by the Master Looter / group leader. This triggers the frame to appear and display rolls.
 
 - **Roll Sorting**: Rolls are automatically categorized and sorted by type to streamline loot distribution. Only the first roll submitted by each player is considered; subsequent rolls are ignored.
 
-- **Show/Hide Frame**: To show or hide the frame, type:  
+- **Show/Hide Frame**: To toggle the frame on/off, type:  
   `/lootblare` or `/lb`  
-  If the frame is active, you can move it by dragging.
+  If the frame is active, you can move it by dragging. Its position is automatically saved.
+  Use `/lb reset` to re-center the frame if needed.
+
+- **Test Window**: To preview and test the frame with sample rolls, type:  
+  `/lb test`
 
 - **Easy Roll Buttons**: For raiders, the addon provides convenient roll buttons:
 
@@ -21,10 +25,10 @@ This addon displays a pop-up frame showing items and rolls when a single uncommo
 
     All configurable with `/lootblare <type> <number>`, for example `/lootblare tm 98` will set tmog rolls to be between 1 to 98.
 - **Frame Duration**: By default, the frame stays on screen for `15 seconds`. Adjust this duration with:  
-  `/lootblare 'time <number>` or `/lb 'time <number>`
+  `/lootblare time <number>` or `/lb time <number>`
 
-  Example: `/lootblare 'time 30` to set the duration to 30 seconds.  
-  This is also the way the masterlooter sets the roll time. The frame will stay visible for the diuration you set regardless of the masterlooter's set roll time.
+  Example: `/lootblare time 30` to set the duration to 30 seconds.  
+  This is also the way the masterlooter sets the roll time. The frame will stay visible for the duration you set regardless of the masterlooter's set roll time.
 
 Every time the master looter changes, the new master looter announces the roll time defined. This value is also announced after updating the value with `/lb time <number>`. This announced value is applied to the entire raid to ensure consistency.
 
@@ -32,7 +36,7 @@ Every time the master looter changes, the new master looter announces the roll t
   `/lootblare autoClose on/off` or `/lb autoClose on/off`
 
 - **Configuration Commands**: For a full list of configuration options, type:  
-  `/help`
+  `/lb help`
 
 - **Communication**: The addon uses the addon channel to update data about roll time and the current master looter. For example, if the player logs in after the ML has been set, he will automatically ask who the ML is and the ML will answer. Also, the ML will announce that he is the ML on add-on loading. All of this is invisible to the player
 
@@ -65,3 +69,9 @@ Contributors:
 * [SeguisDumble](https://github.com/SeguisDumble/LootBlare)
 * [Weird Vibes](https://github.com/MarcelineVQ/LootBlare)
 * [Icekronik](https://github.com/Nikki1993)
+
+___
+## Community & Code of Conduct
+
+This project is open source and welcomes contributions. Please read our [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guidelines](CONTRIBUTING.md) to keep our community welcoming and inclusive.
+

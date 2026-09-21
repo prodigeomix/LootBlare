@@ -3,6 +3,6 @@
 ## Author: Ehawne, Sivent, Gulolio, Nikki1993
 ## Version: 1.4.0
 ## Notes: Make loot rolls obvious
-## SavedVariables: FrameShownDuration, FrameAutoClose, RollCap, MLRollCap
+## SavedVariables: FrameShownDuration, FrameAutoClose, RollCap, MLRollCap, LootBlarePos
 
 LootBlare.lua

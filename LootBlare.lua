@@ -1,5 +1,7 @@
 -- LootBlare: Displays sorted item rolls in a draggable frame
 local LB_DEBUG = false
+local format = string.format
+local getn = table.getn
 
 -- Constants
 local LB_PREFIX = "LootBlare"
@@ -23,7 +25,7 @@ local colors = {
 local state = {
   rollMessages = {}, rollers = {}, isRolling = false, time_elapsed = 0,
   item_query = 0.5, times = 5, currentItem = nil,
-  discover = CreateFrame("GameTooltip", "CustomTooltip1", UIParent, "GameTooltipTemplate"),
+  discover = CreateFrame("GameTooltip", "LootBlareTooltip", UIParent, "GameTooltipTemplate"),
   masterLooter = nil, MLRollDuration = 15, rollDuration = 15,
   rollCap = { sr = 101, ms = 100, os = 99, tm = 50, },
 }
@@ -64,13 +66,17 @@ local function ExtractItemLinksFromMessage(message)
 end
 
 local function CheckItem(link)
+  if not link then return false end
   state.discover:SetOwner(UIParent, "ANCHOR_PRESERVE")
+  state.discover:ClearLines()
   state.discover:SetHyperlink(link)
-  if discoverTextLeft1 and discoverTooltipTextLeft1:IsVisible() then
-    local name = discoverTooltipTextLeft1:GetText()
-    discoverTooltip:Hide()
-    return name ~= (RETRIEVING_ITEM_INFO or "")
+  local text = LootBlareTooltipTextLeft1
+  if text and text:IsVisible() then
+    local name = text:GetText()
+    state.discover:Hide()
+    return name and name ~= "" and name ~= (RETRIEVING_ITEM_INFO or "Retrieving item information")
   end
+  state.discover:Hide()
   return false
 end
 
@@ -172,10 +178,23 @@ local function UpdateTextArea(frame)
   frame.textArea:SetText(table.concat(textBuffer, "\n"))
 end
 
+local function RestoreFramePosition(frame)
+  frame = frame or itemRollFrame
+  if not frame then return end
+  if LootBlarePos and LootBlarePos.point then
+    frame:ClearAllPoints()
+    frame:SetPoint(LootBlarePos.point, UIParent, LootBlarePos.relPoint or LootBlarePos.point, LootBlarePos.x or 0, LootBlarePos.y or 0)
+  else
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  end
+end
+
 local function CreateItemRollFrame()
   local frame = CreateFrame("Frame", "ItemRollFrame", UIParent)
   frame:SetWidth(165)
   frame:SetHeight(220)
+  frame:SetClampedToScreen(true)
   frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   frame:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -188,7 +207,11 @@ local function CreateItemRollFrame()
   frame:EnableMouse(true)
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", function() frame:StartMoving() end)
-  frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+  frame:SetScript("OnDragStop", function()
+    frame:StopMovingOrSizing()
+    local point, _, relPoint, x, y = frame:GetPoint()
+    LootBlarePos = { point = point, relPoint = relPoint, x = x, y = y }
+  end)
 
   -- Close button
   local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -306,9 +329,11 @@ itemRollFrame:SetScript("OnUpdate", function()
 
   if state.times > 0 and state.item_query < 0 and state.currentItem and not CheckItem(state.currentItem) then
     state.times = state.times - 1
+    state.item_query = 0.5
   elseif state.currentItem then
     if not SetItemInfo(this, state.currentItem) then this:Hide() end
     state.times = 5
+    state.item_query = 0.5
   end
 end)
 
@@ -328,7 +353,7 @@ function itemRollFrame:CHAT_MSG_LOOT(message)
   if not who then return end
 
   local links = ExtractItemLinksFromMessage(message)
-  if links[1] and not links[2] and this.itemLink == links[1] then
+  if links[1] and this.itemLink == links[1] then
     resetRolls()
     this:Hide()
   end
@@ -359,19 +384,54 @@ function itemRollFrame:CHAT_MSG_SYSTEM(message)
   end
 end
 
-function itemRollFrame:CHAT_MSG_RAID_WARNING(message)
-  if not string.find(message, "|c.-|H") then return end
+local function HandleChatMessage(message, sender, event)
+  if not message or not string.find(message, "|c.-|H") then return end
+
+  -- Filter out system / broadcast messages that shouldn't trigger rolling
+  if string.find(message, "^No one has nee") or string.find(message, "has been sent to")
+    or string.find(message, " received ") then return end
+
+  -- If not RAID_WARNING, verify that sender is ML, raid/party leader, self, or message is a roll call
+  if event ~= "CHAT_MSG_RAID_WARNING" then
+    local ml = GetMLName()
+    local isML = (ml and sender == ml)
+    local isPlayer = (sender == UnitName("player"))
+    local isLeader = (IsRaidLeader and IsRaidLeader() and sender == ml) or (IsPartyLeader and IsPartyLeader())
+    local lowerMsg = string.lower(message)
+    local isRollCall = string.find(lowerMsg, "roll") or string.find(lowerMsg, "ms") or string.find(lowerMsg, "os") or string.find(lowerMsg, "sr")
+    if not (isML or isPlayer or isLeader or isRollCall) then
+      return
+    end
+  end
 
   local links = ExtractItemLinksFromMessage(message)
-  if links[1] and not links[2] then
-    if string.find(message, "^No one has nee") or string.find(message, "has been sent to")
-      or string.find(message, " received ") then return end
+  if links[1] then
     resetRolls()
     UpdateTextArea(itemRollFrame)
     state.time_elapsed = 0
     state.isRolling = true
     ShowFrame(itemRollFrame, state.MLRollDuration, links[1])
   end
+end
+
+function itemRollFrame:CHAT_MSG_RAID_WARNING(message, sender)
+  HandleChatMessage(message, sender, "CHAT_MSG_RAID_WARNING")
+end
+
+function itemRollFrame:CHAT_MSG_RAID(message, sender)
+  HandleChatMessage(message, sender, "CHAT_MSG_RAID")
+end
+
+function itemRollFrame:CHAT_MSG_RAID_LEADER(message, sender)
+  HandleChatMessage(message, sender, "CHAT_MSG_RAID_LEADER")
+end
+
+function itemRollFrame:CHAT_MSG_PARTY(message, sender)
+  HandleChatMessage(message, sender, "CHAT_MSG_PARTY")
+end
+
+function itemRollFrame:CHAT_MSG_PARTY_LEADER(message, sender)
+  HandleChatMessage(message, sender, "CHAT_MSG_PARTY_LEADER")
 end
 
 function itemRollFrame:SendRollTime()
@@ -475,7 +535,7 @@ end
 function itemRollFrame:ADDON_LOADED(addon)
   if addon ~= "LootBlare" then return end
   if FrameShownDuration == nil then FrameShownDuration = 15 end
-  if FrameAutoClose == nil then FrameAutoClose = true end
+  if FrameAutoClose == nil then FrameAutoClose = false end
   if RollCap == nil then RollCap = { sr=101, ms=100, os=99, tm=50 } end
   if MLRollCap == nil then MLRollCap = {} end
 
@@ -483,57 +543,136 @@ function itemRollFrame:ADDON_LOADED(addon)
   for k, _ in pairs(state.rollCap) do
     state.rollCap[k] = RollCap[k]
   end
+
+  RestoreFramePosition(self or itemRollFrame)
 end
 
 -- Register events
 itemRollFrame:RegisterEvent("ADDON_LOADED")
 itemRollFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 itemRollFrame:RegisterEvent("CHAT_MSG_RAID_WARNING")
+itemRollFrame:RegisterEvent("CHAT_MSG_RAID")
+itemRollFrame:RegisterEvent("CHAT_MSG_RAID_LEADER")
+itemRollFrame:RegisterEvent("CHAT_MSG_PARTY")
+itemRollFrame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
 itemRollFrame:RegisterEvent("CHAT_MSG_ADDON")
 itemRollFrame:RegisterEvent("CHAT_MSG_LOOT")
 itemRollFrame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
 itemRollFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 itemRollFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 itemRollFrame:SetScript("OnEvent", function()
-  itemRollFrame[event](itemRollFrame, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+  if itemRollFrame[event] then
+    itemRollFrame[event](itemRollFrame, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+  end
 end)
 
 -- Slash commands
 SLASH_LOOTBLARE1, SLASH_LOOTBLARE2 = '/lootblare', '/lb'
 SlashCmdList["LOOTBLARE"] = function(msg)
-  msg = string.lower(msg)
-  if msg == "help" or msg == "" then
-    lb_print("LootBlare " .. GetAddOnMetadata("LootBlare", "Version") .. " displays sorted item rolls.")
-    lb_print("Commands: /lb time <seconds> | /lb autoclose on/off | /lb settings")
-    lb_print("Commands: /lb sr <number> | /lb ms <number> | /lb os <number> | /lb tm <number>")
+  msg = string.lower(msg or "")
+  msg = string.gsub(msg, "^%s*(.-)%s*$", "%1")
+
+  if msg == "" or msg == "toggle" then
+    if itemRollFrame:IsShown() then
+      itemRollFrame:Hide()
+      resetRolls()
+      lb_print("Frame hidden.")
+    else
+      if not state.currentItem then
+        state.currentItem = "item:16908:0:0:0"
+        SetItemInfo(itemRollFrame, state.currentItem)
+      end
+      itemRollFrame:Show()
+      lb_print("Frame shown. Drag to reposition.")
+    end
     return
   end
+
+  if msg == "show" then
+    if not state.currentItem then
+      state.currentItem = "item:16908:0:0:0"
+      SetItemInfo(itemRollFrame, state.currentItem)
+    end
+    itemRollFrame:Show()
+    lb_print("Frame shown. Drag to reposition.")
+    return
+  end
+
+  if msg == "hide" then
+    itemRollFrame:Hide()
+    resetRolls()
+    lb_print("Frame hidden.")
+    return
+  end
+
+  if msg == "reset" then
+    LootBlarePos = nil
+    itemRollFrame:ClearAllPoints()
+    itemRollFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    lb_print("Position reset to center.")
+    return
+  end
+
+  if msg == "test" then
+    resetRolls()
+    local testItem = "item:16908:0:0:0"
+    ShowFrame(itemRollFrame, state.MLRollDuration, testItem)
+    local pClass = UnitClass("player") or "Priest"
+    state.rollMessages = {
+      { roller = UnitName("player") or "Player", roll = 98, minRoll = 1, maxRoll = state.rollCap.sr, class = pClass },
+      { roller = "RaiderOne", roll = 100, minRoll = 1, maxRoll = state.rollCap.ms, class = "Warrior" },
+      { roller = "RaiderTwo", roll = 74, minRoll = 1, maxRoll = state.rollCap.os, class = "Mage" },
+      { roller = "RaiderThree", roll = 42, minRoll = 1, maxRoll = state.rollCap.tm, class = "Rogue" },
+    }
+    state.rollers[UnitName("player") or "Player"] = 1
+    state.rollers["RaiderOne"] = 1
+    state.rollers["RaiderTwo"] = 1
+    state.rollers["RaiderThree"] = 1
+    UpdateTextArea(itemRollFrame)
+    lb_print("Displaying test roll window for [Bloodfang Hood]. Type /lb hide or click (X) to close.")
+    return
+  end
+
+  if msg == "help" then
+    lb_print("LootBlare " .. (GetAddOnMetadata("LootBlare", "Version") or "1.4.0") .. " commands:")
+    lb_print("  /lb (or /lb toggle) - Show or hide the roll window")
+    lb_print("  /lb test - Display a test roll with dummy data")
+    lb_print("  /lb reset - Reset window position to center")
+    lb_print("  /lb time <seconds> - Set roll display duration")
+    lb_print("  /lb autoclose on/off - Toggle auto-closing when time expires")
+    lb_print("  /lb settings - Display current settings")
+    lb_print("  /lb sr|ms|os|tm <number> - Configure roll button caps")
+    return
+  end
+
   if msg == "settings" then
-    lb_print("Duration: " .. FrameShownDuration .. "s | Auto-close: " .. (FrameAutoClose and "on" or "off"))
-    lb_print("SR roll cap: " .. RollCap["sr"])
-    lb_print("MS roll cap: " .. RollCap["ms"])
-    lb_print("OS roll cap: " .. RollCap["os"])
-    lb_print("TM roll cap: " .. RollCap["tm"])
+    lb_print("Duration: " .. (FrameShownDuration or state.MLRollDuration or 15) .. "s | Auto-close: " .. (FrameAutoClose and "on" or "off"))
+    lb_print("SR roll cap: " .. (RollCap and RollCap["sr"] or state.rollCap.sr))
+    lb_print("MS roll cap: " .. (RollCap and RollCap["ms"] or state.rollCap.ms))
+    lb_print("OS roll cap: " .. (RollCap and RollCap["os"] or state.rollCap.os))
+    lb_print("TM roll cap: " .. (RollCap and RollCap["tm"] or state.rollCap.tm))
     return
   end
-  if string.find(msg, "time") then
-    local _, _, newDuration = string.find(msg, "time (%d+)")
+
+  if string.find(msg, "^time") then
+    local _, _, newDuration = string.find(msg, "time%s+(%d+)")
     newDuration = tonumber(newDuration)
     if newDuration and newDuration > 0 then
       FrameShownDuration = newDuration
+      state.MLRollDuration = newDuration
       lb_print("Roll time set to " .. newDuration .. " seconds.")
       if PlayerIsML() then
         SendAddonMessage(LB_PREFIX, LB_SET_ROLL_TIME .. newDuration, GetNumRaidMembers() > 0 and "RAID" or "PARTY")
       end
-
       return
     end
 
     lb_print("Invalid duration. Enter a number > 0.")
     return
   end
-  if string.find(msg, "autoclose") then
-    local _, _, autoClose = string.find(msg, "autoclose (%a+)")
+
+  if string.find(msg, "^autoclose") then
+    local _, _, autoClose = string.find(msg, "autoclose%s+(%a+)")
     if autoClose == "on" or autoClose == "true" then
       FrameAutoClose = true
       lb_print("Auto-close enabled.")
@@ -548,11 +687,13 @@ SlashCmdList["LOOTBLARE"] = function(msg)
     lb_print("Invalid option. Use 'on' or 'off'.")
     return
   end
+
   for k, _ in pairs(RollCap) do
-    if string.find(msg, k) then
-      local _, _, newRollCap = string.find(msg, k .. " (%d+)")
+    if string.find(msg, "^" .. k) then
+      local _, _, newRollCap = string.find(msg, k .. "%s+(%d+)")
       newRollCap = tonumber(newRollCap)
       if not newRollCap or newRollCap < 0 then
+        lb_print("Invalid roll cap value.")
         return
       end
 
