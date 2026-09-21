@@ -23,3 +23,7 @@ ehthumbs_vista.db
 
 # SavedVariables when testing in WoW directory (optional safety)
 *.lua.bak
+
+# Agent configuration
+.agents/
+
