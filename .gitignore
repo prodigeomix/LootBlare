@@ -1,0 +1,25 @@
+# OS generated files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+.DS_Store
+.Spotlight-V100
+.Trashes
+
+# Editor and IDE directories
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Temporary / backup files
+*.bak
+*.swp
+*.swo
+*~
+
+# SavedVariables when testing in WoW directory (optional safety)
+*.lua.bak
